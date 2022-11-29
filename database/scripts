@@ -1,0 +1,139 @@
+
+DELIMITER //
+CREATE TRIGGER trg_insert_ciudad
+AFTER INSERT ON CIUDADES
+FOR EACH ROW
+BEGIN
+DECLARE prod_id INT;
+DECLARE productos CURSOR FOR (SELECT id FROM productos);
+DECLARE EXIT HANDLER FOR NOT FOUND SET prod_id=null;
+	OPEN productos;
+	ins_loop:LOOP
+    FETCH productos INTO prod_id;
+    	IF prod_id!=null THEN
+                LEAVE ins_loop;
+          END IF;
+          insert into bodegas (producto_id,ciudad_id,existencia)
+		values (prod_id,NEW.id,0);
+    END LOOP;
+CLOSE productos;
+END//
+DELIMITER ;
+
+
+DELIMITER //
+CREATE TRIGGER trg_insert_producto
+AFTER INSERT ON productos
+FOR EACH ROW
+BEGIN
+DECLARE ciudad_id INT;
+DECLARE ciudades CURSOR FOR (SELECT id FROM ciudades);
+DECLARE EXIT HANDLER FOR NOT FOUND SET ciudad_id=null;
+	OPEN ciudades;
+	ins_loop:LOOP
+    FETCH ciudades INTO ciudad_id;
+    	IF ciudad_id!=null THEN
+                LEAVE ins_loop;
+          END IF;
+          if ciudad_id=1 THEN
+          	insert into bodegas (producto_id,ciudad_id,existencia)
+            values (NEW.id,ciudad_id,NEW.stock);
+          ELSe
+         	 insert into bodegas (producto_id,ciudad_id,existencia)
+             values (NEW.id,ciudad_id,0);
+          end if;
+    END LOOP;
+CLOSE ciudades;
+END//
+DELIMITER ;
+
+
+
+DELIMITER //
+CREATE TRIGGER trg_upd_ingreso
+AFTER update ON ingresos
+FOR EACH ROW
+BEGIN
+DECLARE var_pro INT;
+DECLARE var_can INT;
+DECLARE c_detalle CURSOR FOR
+(SELECT producto_id, cantidad FROM ingreso_producto where new.id=ingreso_id);
+DECLARE EXIT HANDLER FOR NOT FOUND SET var_pro=null;
+
+if NEW.estadoingresos_id=2 THEN 
+    OPEN c_detalle; 
+        ins_loop:LOOP
+        FETCH c_detalle INTO var_pro,var_can ;
+        IF var_pro!=null THEN
+            LEAVE ins_loop;
+        END IF;
+        UPDATE bodegas b set b.existencia= b.existencia + var_can where b.producto_id=var_pro and b.ciudad_id=1;
+        UPDATE productos p set p.stock=p.stock + var_can where p.id=var_pro; END LOOP;
+    CLOSE c_detalle;
+END IF;
+END//
+DELIMITER ;
+
+
+
+
+DELIMITER //
+CREATE TRIGGER `trg_ins_pedidoProducto`
+AFTER INSERT ON `pedido_producto`
+FOR EACH ROW BEGIN DECLARE ciud_id INT;
+DECLARE c_ciudades CURSOR FOR (SELECT max(c.id) as id FROM pedidos pe, pedido_producto pp, users u, ciudades c where new.pedido_id=pe.id AND pe.user_id=u.id AND u.ciudad_id=c.id);
+DECLARE EXIT HANDLER FOR NOT FOUND SET ciud_id=null;
+OPEN c_ciudades; ins_loop:LOOP FETCH c_ciudades INTO ciud_id; IF ciud_id!=null THEN LEAVE ins_loop; END IF; UPDATE bodegas b set b.existencia= b.existencia - new.cantidad where b.producto_id=new.producto_id and b.ciudad_id=ciud_id; UPDATE productos p set p.stock=p.stock- new.cantidad where p.id=new.producto_id; 
+END LOOP;
+CLOSE c_ciudades; 
+END//
+DELIMITER ;
+
+
+
+
+
+
+
+/*
+esto no valio toco hacer a mano
+*/
+DELIMITER //
+CREATE TRIGGER trg_upd_traslado
+AFTER update ON traslados
+FOR EACH ROW
+BEGIN
+if NEW.estadoingresos_id=2 THEN
+	update bodegas set existencia=existencia + new.cantidad
+    where ciudad_id=new.destino_id and producto_id=new.producto_id;
+    update bodegas set existencia=existencia - new.cantidad
+    where ciudad_id=new.origen_id and producto_id=new.producto_id;
+   
+end if;
+END//
+DELIMITER ;
+
+
+DELIMITER //
+CREATE TRIGGER trg_upd_traslado
+AFTER UPDATE ON traslados
+FOR EACH ROW
+BEGIN
+DECLARE var_pro INT;
+DECLARE var_can INT;
+DECLARE c_detalle CURSOR FOR
+(SELECT producto_id, cantidad FROM traslado_producto where new.id=traslado_id);
+DECLARE EXIT HANDLER FOR NOT FOUND SET var_pro=null;
+IF (NEW.estadoingresos_id=2 )THEN 
+    OPEN c_detalle; 
+        ins_loop:LOOP
+        FETCH c_detalle INTO var_pro,var_can;
+        IF var_pro!=null THEN
+            LEAVE ins_loop;
+        END IF;
+        update bodegas b set b.existencia=b.existencia + var_can where b.ciudad_id=new.destino_id and b.producto_id=var_pro;
+    update bodegas b set b.existencia=b.existencia - var_can where b.ciudad_id=new.origen_id and b.producto_id=var_pro;
+    CLOSE c_detalle;
+END IF;
+END//
+DELIMITER ;
